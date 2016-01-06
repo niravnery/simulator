@@ -563,7 +563,7 @@ int INSERT_EMPTY_BLOCK(unsigned int phy_flash_nb, unsigned int phy_block_nb)
 	new_empty_block = (empty_block_entry*)calloc(1, sizeof(empty_block_entry));
 	if(new_empty_block == NULL){
 		printf("ERROR[%s] Alloc new empty block fail\n",__FUNCTION__);
-		return FAILED;
+		return FAILURE;
 	}
 
 	/* Init New empty block */
@@ -606,7 +606,7 @@ int INSERT_VICTIM_BLOCK(empty_block_entry* full_block){
 	new_victim_block = (victim_block_entry*)calloc(1, sizeof(victim_block_entry));
 	if(new_victim_block == NULL){
 		printf("ERROR[%s] Calloc fail\n",__FUNCTION__);
-		return FAILED;
+		return FAILURE;
 	}
 
 	/* Copy the full block address */
@@ -727,7 +727,7 @@ int UPDATE_INVERSE_BLOCK_VALIDITY(unsigned int phy_flash_nb, unsigned int phy_bl
 {
 	if(phy_flash_nb >= FLASH_NB || phy_block_nb >= BLOCK_NB || phy_page_nb >= PAGE_NB){
 		printf("ERROR[%s] Wrong physical address\n",__FUNCTION__);
-		return FAILED;
+		return FAILURE;
 	}
 
 	int i;

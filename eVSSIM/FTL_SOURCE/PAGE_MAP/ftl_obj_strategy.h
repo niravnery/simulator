@@ -24,8 +24,8 @@ typedef struct stored_object {
 } stored_object;
 
 typedef struct {
-	unsigned int partition_id;
-	unsigned int object_id;
+	uint64_t partition_id;
+	uint64_t object_id;
 } object_location;
 
 typedef struct {
@@ -42,6 +42,12 @@ int _FTL_OBJ_WRITE(object_id_t object_id, unsigned int offset, unsigned int leng
 int _FTL_OBJ_COPYBACK(int32_t source, int32_t destination);
 int _FTL_OBJ_CREATE(size_t size);
 int _FTL_OBJ_DELETE(object_id_t object_id);
+void _FTL_OBJ_WRITECREATE(object_location obj_loc, unsigned int length);
+
+/* Persistent OSD storge */
+void osd_init(void);
+void OSD_WRITE_OBJ(object_location obj_loc, unsigned int length, uint8_t *buf);
+void OSD_READ_OBJ(object_location obj_loc, unsigned int length, uint64_t addr);
 
 /* Helper functions */
 stored_object *lookup_object(object_id_t object_id);

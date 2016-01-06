@@ -96,7 +96,7 @@ int SSD_IO_INIT(void){
 int SSD_PAGE_WRITE(unsigned int flash_nb, unsigned int block_nb, unsigned int page_nb, int offset, int type, int io_page_nb)
 {
 	int channel, reg;
-	int ret = FAILED;
+	int ret = FAILURE;
 	int delay_ret;
 
 	/* Calculate ch & reg */
@@ -114,7 +114,7 @@ int SSD_PAGE_WRITE(unsigned int flash_nb, unsigned int block_nb, unsigned int pa
 	}	
 	
 	/* Check Channel Operation */
-	while(ret == FAILED){
+	while(ret == FAILURE){
 		ret = SSD_CH_ACCESS(channel);
 	}
 
@@ -350,11 +350,11 @@ int SSD_CH_ACCESS(int channel)
 				if(reg_io_cmd[r_num] == READ){
 					SSD_CELL_READ_DELAY(r_num);
 					SSD_REG_READ_DELAY(r_num);
-					ret = FAILED;
+					ret = FAILURE;
 				}
 				else if(reg_io_cmd[r_num] == WRITE){
 					SSD_REG_WRITE_DELAY(r_num);
-					ret = FAILED;
+					ret = FAILURE;
 				}
 			}
 			r_num++;	
@@ -715,7 +715,7 @@ int SSD_PAGE_COPYBACK(uint32_t source, uint32_t destination, int type){
 	destination_plane = CALC_FLASH(destination)*PLANES_PER_FLASH + CALC_BLOCK(destination)%PLANES_PER_FLASH;
 	if (source_plane != destination_plane){
 		//copyback from different planes is not supported
-		return FAILED;
+		return FAILURE;
 	}else{
 		reg = destination_plane;
 		flash_nb = CALC_FLASH(source);

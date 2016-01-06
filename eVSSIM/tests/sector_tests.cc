@@ -1,8 +1,7 @@
 
 extern "C" {
 #include "common.h"
-#include "ssd.h"
-#include "ftl.h"
+#include "ftl_sect_strategy.h"
 }
 extern "C" int g_init;
 extern "C" int g_server_create;
@@ -47,10 +46,16 @@ namespace {
                     "STAT_PATH /tmp/stat.csv\n"
                     "STORAGE_STRATEGY 1\n"; // sector strategy
                 ssd_conf.close();
-                SSD_INIT();
+            	FTL_INIT();
+            #ifdef MONITOR_ON
+            	INIT_LOG_MANAGER();
+            #endif
             }
             virtual void TearDown() {
-                SSD_TERM();
+            	FTL_TERM();
+            #ifdef MONITOR_ON
+            	TERM_LOG_MANAGER();
+            #endif
                 remove("data/empty_block_list.dat");
                 remove("data/inverse_block_mapping.dat");
                 remove("data/inverse_page_mapping.dat");
@@ -71,7 +76,7 @@ namespace {
     TEST_P(SectorUnitTest, SequentialOnePageAtTimeWrite) {
         for(int x=0; x<8; x++){
             for(size_t p=0; p < pages_; p++){
-                ASSERT_EQ(SUCCESS, _FTL_WRITE_SECT(p * 4096, 1));
+                ASSERT_EQ(SUCCESSFUL, _FTL_WRITE_SECT(p * 4096, 1));
             }
         }
     }
@@ -79,7 +84,7 @@ namespace {
     TEST_P(SectorUnitTest, RandomOnePageAtTimeWrite) {
         for(int x=0; x<8; x++){
             for(size_t p=0; p < pages_; p++){
-                ASSERT_EQ(SUCCESS, _FTL_WRITE_SECT((rand() % pages_) * 4096, 1));
+                ASSERT_EQ(SUCCESSFUL, _FTL_WRITE_SECT((rand() % pages_) * 4096, 1));
             }
         }
     }
@@ -87,10 +92,10 @@ namespace {
     TEST_P(SectorUnitTest, MixSequentialAndRandomOnePageAtTimeWrite) {
         for(int x=0; x<2; x++){
             for(size_t p=0; p < pages_; p++){
-                ASSERT_EQ(SUCCESS, _FTL_WRITE_SECT((rand() % pages_) * 4096, 1));
+                ASSERT_EQ(SUCCESSFUL, _FTL_WRITE_SECT((rand() % pages_) * 4096, 1));
             }
             for(size_t p=0; p < pages_; p++){
-                ASSERT_EQ(SUCCESS, _FTL_WRITE_SECT(p * 4096, 1));
+                ASSERT_EQ(SUCCESSFUL, _FTL_WRITE_SECT(p * 4096, 1));
             }
         }
     }

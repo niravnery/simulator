@@ -9,8 +9,8 @@
 #include <limits.h>
 
 /* SSD Configuration */
-extern int SECTOR_SIZE;
-extern int VSSIM_PAGE_SIZE;
+extern int eVSSIM_SECTOR_SIZE;
+extern int eVSSIM_PAGE_SIZE;
 
 extern int64_t SECTOR_NB;
 extern int PAGE_NB;
@@ -64,11 +64,5 @@ extern int STAT_SCOPE;
 extern char STAT_PATH[PATH_MAX];
 void INIT_SSD_CONFIG(void);
 char* GET_FILE_NAME(void);
-
-/* Storage strategy (1 = address-based, 2 = object-based */
-extern int STORAGE_STRATEGY;
-
-#define STORAGE_STRATEGY_SECTOR    1
-#define STORAGE_STRATEGY_OBJECT    2
 
 #endif

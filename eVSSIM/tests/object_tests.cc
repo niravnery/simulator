@@ -1,10 +1,7 @@
 
 extern "C" {
 #include "common.h"
-#include "ssd.h"
-#include "ftl.h"
 #include "ftl_obj_strategy.h"
-#include "ftl_sect_strategy.h"
 #include "uthash.h"
 
 #include "osd.h"
@@ -52,16 +49,22 @@ namespace {
                     "STAT_PATH /tmp/stat.csv\n"
                     "STORAGE_STRATEGY 2\n"; // object strategy
                 ssd_conf.close();
-                SSD_INIT();
+            	FTL_INIT();
+            #ifdef MONITOR_ON
+            	INIT_LOG_MANAGER();
+            #endif
                 object_size_ = GetParam();
-                int object_pages = (int)ceil(1.0 * object_size_ / VSSIM_PAGE_SIZE); // ceil because we can't have a page belong to 2 objects
+                int object_pages = (int)ceil(1.0 * object_size_ / eVSSIM_PAGE_SIZE); // ceil because we can't have a page belong to 2 objects
                 objects_in_ssd_ = (unsigned int)((PAGES_IN_SSD - BLOCK_NB)/ object_pages); //over-provisioning of exactly one block
 #ifndef NO_OSD
                 osd_init();
 #endif
             }
             virtual void TearDown() {
-                SSD_TERM();
+            	FTL_TERM();
+            #ifdef MONITOR_ON
+            	TERM_LOG_MANAGER();
+            #endif
                 remove("data/empty_block_list.dat");
                 remove("data/inverse_block_mapping.dat");
                 remove("data/inverse_page_mapping.dat");
@@ -104,7 +107,7 @@ namespace {
 
     TEST_P(ObjectUnitTest, SimpleObjectCreate) {
         printf("SimpleObjectCreate test started\n");
-        printf("Page no.:%ld\nPage size:%d\n",PAGES_IN_SSD,VSSIM_PAGE_SIZE);
+        printf("Page no.:%ld\nPage size:%d\n",PAGES_IN_SSD,eVSSIM_PAGE_SIZE);
         printf("Object size: %d bytes\n",object_size_);
         
 #ifndef NO_OSD
@@ -133,7 +136,7 @@ namespace {
 
     TEST_P(ObjectUnitTest, SimpleObjectCreateWrite) {
         printf("SimpleObjectCreateWrite test started\n");
-        printf("Page no.:%ld\nPage size:%d\n",PAGES_IN_SSD,VSSIM_PAGE_SIZE);
+        printf("Page no.:%ld\nPage size:%d\n",PAGES_IN_SSD,eVSSIM_PAGE_SIZE);
         printf("Object size: %d bytes\n",object_size_);
 
         // used to keep all the assigned ids
@@ -156,15 +159,15 @@ namespace {
         
 #ifndef NO_OSD
         free(wrbuf);
-        wrbuf = (char *)Calloc(1, VSSIM_PAGE_SIZE);
+        wrbuf = (char *)Calloc(1, eVSSIM_PAGE_SIZE);
 #endif
         
         // Write PAGE_SIZE data to each one
         for(unsigned int p=0; p < objects_in_ssd_/2; p++){
-            ASSERT_EQ(SUCCESSFUL, _FTL_OBJ_WRITE(objects[p],0,VSSIM_PAGE_SIZE));
+            ASSERT_EQ(SUCCESSFUL, _FTL_OBJ_WRITE(objects[p],0,eVSSIM_PAGE_SIZE));
 #ifndef NO_OSD
             ASSERT_EQ(0, osd_write(&osd, USEROBJECT_PID_LB, USEROBJECT_OID_LB + objects[p],
-                VSSIM_PAGE_SIZE, 0, (uint8_t *)wrbuf, 0, osd_sense, DDT_CONTIG));
+                eVSSIM_PAGE_SIZE, 0, (uint8_t *)wrbuf, 0, osd_sense, DDT_CONTIG));
 #endif
         }
         
@@ -177,7 +180,7 @@ namespace {
 
     TEST_P(ObjectUnitTest, SimpleObjectCreateRead) {
         printf("SimpleObjectCreateRead test started\n");
-        printf("Page no.:%ld\nPage size:%d\n",PAGES_IN_SSD,VSSIM_PAGE_SIZE);
+        printf("Page no.:%ld\nPage size:%d\n",PAGES_IN_SSD,eVSSIM_PAGE_SIZE);
         printf("Object size: %d bytes\n",object_size_);
 
         // used to keep all the assigned ids
@@ -203,16 +206,16 @@ namespace {
 #ifndef NO_OSD
         // length and read buffer
         uint64_t len;
-        char *rdbuf = (char *)Calloc(1, VSSIM_PAGE_SIZE/2);
+        char *rdbuf = (char *)Calloc(1, eVSSIM_PAGE_SIZE/2);
 #endif
         
         // Read PAGE_SIZE/2 data from each one
         for(unsigned int p=0; p < objects_in_ssd_/2; p++){
-            ASSERT_EQ(SUCCESSFUL, _FTL_OBJ_READ(objects[p],0,VSSIM_PAGE_SIZE));
+            ASSERT_EQ(SUCCESSFUL, _FTL_OBJ_READ(objects[p],0,eVSSIM_PAGE_SIZE));
 #ifndef NO_OSD
             // read and compare with the expected unique data
             ASSERT_EQ(0, osd_read(&osd, USEROBJECT_PID_LB, USEROBJECT_OID_LB + objects[p],
-                VSSIM_PAGE_SIZE/2, 0, NULL, (uint8_t *)rdbuf, &len, 0, osd_sense, DDT_CONTIG));
+                eVSSIM_PAGE_SIZE/2, 0, NULL, (uint8_t *)rdbuf, &len, 0, osd_sense, DDT_CONTIG));
             sprintf(wrbuf, "%u", objects[p]);
             ASSERT_EQ(0, strcmp(rdbuf, wrbuf));
 #endif
@@ -228,7 +231,7 @@ namespace {
 
     TEST_P(ObjectUnitTest, SimpleObjectCreateDelete) {
         printf("SimpleObjectCreateDelete test started\n");
-        printf("Page no.:%ld\nPage size:%d\n",PAGES_IN_SSD,VSSIM_PAGE_SIZE);
+        printf("Page no.:%ld\nPage size:%d\n",PAGES_IN_SSD,eVSSIM_PAGE_SIZE);
         printf("Object size: %d bytes\n",object_size_);
         
         // used to keep all the assigned ids
@@ -279,7 +282,7 @@ namespace {
     TEST_P(ObjectUnitTest, ObjectGrowthTest) {
         unsigned int final_object_size = objects_in_ssd_ * object_size_;
         printf("ObjectGrowth test started\n");
-        printf("Page no.:%ld\nPage size:%d\n",PAGES_IN_SSD,VSSIM_PAGE_SIZE);
+        printf("Page no.:%ld\nPage size:%d\n",PAGES_IN_SSD,eVSSIM_PAGE_SIZE);
         printf("Initial object size: %d bytes\n",object_size_);
         printf("Final object size: %d bytes\n",final_object_size);
 

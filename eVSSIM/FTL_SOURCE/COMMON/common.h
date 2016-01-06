@@ -41,7 +41,7 @@
 #endif
 
 #define SUCCESSFUL		1
-#define FAILED		0
+#define FAILURE		0
 
 /* Block Type */
 #define EMPTY_BLOCK             30

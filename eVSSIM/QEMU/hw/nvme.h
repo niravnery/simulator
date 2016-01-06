@@ -101,7 +101,8 @@
 
 /* Definitions regarding  Identify Controller Datastructure */
 #define NO_LBA_FORMATS 15 /* 0 BASED */
-#define LBA_FORMAT_INUSE 0 /* 0 BASED */
+//NIR--> modified the lba format to "3" so the ms field is not zero but 128 (i can write 128 bytes of metadata)
+#define LBA_FORMAT_INUSE 3 /* 0 BASED */
 
 #define NVME_SPARE_THRESH 20
 #define NVME_TEMPERATURE 0x143

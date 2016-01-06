@@ -64,7 +64,7 @@ int GET_NEW_PAGE(int mode, int mapping_index, uint32_t* ppn)
 
 	if(curr_empty_block == NULL){
 		printf("ERROR[%s] fail\n",__FUNCTION__);
-		return FAILED;
+		return FAILURE;
 	}
 
 

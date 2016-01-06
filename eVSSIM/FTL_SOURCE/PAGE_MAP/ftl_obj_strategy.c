@@ -1,8 +1,17 @@
 #include "ftl_obj_strategy.h"
 
-stored_object *objects_table;
-page_node *global_page_table;
+#include "osd.h"
+#include "osd-util/osd-util.h"
+#include "osd-util/osd-defs.h"
+
+uint8_t *osd_sense;
+static const uint32_t cdb_cont_len = 0;
+struct osd_device osd;
+
+stored_object *objects_table = NULL;
+page_node *global_page_table = NULL;
 object_id_t current_id;
+
 
 void INIT_OBJ_STRATEGY(void)
 {
@@ -41,21 +50,21 @@ int _FTL_OBJ_READ(object_id_t object_id, unsigned int offset, unsigned int lengt
     page_node *current_page;
     int io_page_nb;
     int curr_io_page_nb;
-    unsigned int ret = FAILED;
+    unsigned int ret = FAILURE;
     
     object = lookup_object(object_id);
     
     // file not found
     if (object == NULL)
-        return FAILED;
+        return FAILURE;
     // object not big enough
     if (object->size < (offset + length))
-        return FAILED;
+        return FAILURE;
     
     if(!(current_page = page_by_offset(object, offset)))
     {
         printf("Error[%s] %u lookup page by offset failed \n", __FUNCTION__, current_page->page_id);
-        return FAILED;
+        return FAILURE;
     }
     
     // just calculate the overhead of allocating the request. io_page_nb will be the total number of pages we're gonna read
@@ -73,7 +82,7 @@ int _FTL_OBJ_READ(object_id_t object_id, unsigned int offset, unsigned int lengt
 		}
 
 #ifdef FTL_DEBUG
-		if (ret == FAILED)
+		if (ret == FAILURE)
 		{
 			printf("Error[%s] %u page read fail \n", __FUNCTION__, current_page->page_id);
 		}
@@ -105,7 +114,7 @@ int _FTL_OBJ_WRITE(object_id_t object_id, unsigned int offset, unsigned int leng
     uint32_t page_id;
     int io_page_nb;
     int curr_io_page_nb;
-    unsigned int ret = FAILED;
+    unsigned int ret = FAILURE;
     
     object = lookup_object(object_id);
     
@@ -113,7 +122,7 @@ int _FTL_OBJ_WRITE(object_id_t object_id, unsigned int offset, unsigned int leng
     if (object == NULL)
     {
     	printf("NIR--> failed lookup\n");
-        return FAILED;
+        return FAILURE;
     }
     
     // calculate the overhead of allocating the request. io_page_nb will be the total number of pages we're gonna write
@@ -122,14 +131,14 @@ int _FTL_OBJ_WRITE(object_id_t object_id, unsigned int offset, unsigned int leng
     // if the offset is past the current size of the stored_object we need to append new pages until we can start writing
     while (offset > object->size)
     {
-        if (GET_NEW_PAGE(VICTIM_OVERALL, EMPTY_TABLE_ENTRY_NB, &page_id) == FAILED)
+        if (GET_NEW_PAGE(VICTIM_OVERALL, EMPTY_TABLE_ENTRY_NB, &page_id) == FAILURE)
         {
             // not enough memory presumably
             printf("ERROR[FTL_WRITE] Get new page fail \n");
-            return FAILED;
+            return FAILURE;
         }
         if(!add_page(object, page_id))
-            return FAILED;
+            return FAILURE;
         
         // mark new page as valid and used
         UPDATE_NEW_PAGE_MAPPING_NO_LOGICAL(page_id);
@@ -144,15 +153,15 @@ int _FTL_OBJ_WRITE(object_id_t object_id, unsigned int offset, unsigned int leng
             current_page = current_page->next;
         
         // get the pge we'll be writing to
-        if (GET_NEW_PAGE(VICTIM_OVERALL, EMPTY_TABLE_ENTRY_NB, &page_id) == FAILED)
+        if (GET_NEW_PAGE(VICTIM_OVERALL, EMPTY_TABLE_ENTRY_NB, &page_id) == FAILURE)
         {
             printf("ERROR[FTL_WRITE] Get new page fail \n");
-            return FAILED;
+            return FAILURE;
         }
         if((temp_page=lookup_page(page_id)))
         {
             printf("ERROR[FTL_WRITE] Object %lu already contains page %d\n",temp_page->object_id,page_id);
-            return FAILED;
+            return FAILURE;
         }
         
         // mark new page as valid and used
@@ -162,7 +171,7 @@ int _FTL_OBJ_WRITE(object_id_t object_id, unsigned int offset, unsigned int leng
         {
             current_page = add_page(object, page_id);
             if(!current_page)
-                return FAILED;
+                return FAILURE;
         }
         else // writing over parts of the object
         {
@@ -177,7 +186,7 @@ int _FTL_OBJ_WRITE(object_id_t object_id, unsigned int offset, unsigned int leng
 #ifdef GC_ON
             // must improve this because it is very possible that we will do multiple GCs on the same flash chip and block
             // probably gonna add an array to hold the unique ones and in the end GC all of them
-            GC_CHECK(CALC_FLASH(current_page->page_id), CALC_BLOCK(current_page->page_id), false);
+            GC_CHECK(CALC_FLASH(current_page->page_id), CALC_BLOCK(current_page->page_id), false, true);
 #endif
         
         ret = SSD_PAGE_WRITE(CALC_FLASH(page_id), CALC_BLOCK(page_id), CALC_PAGE(page_id), curr_io_page_nb, WRITE, io_page_nb);
@@ -189,7 +198,7 @@ int _FTL_OBJ_WRITE(object_id_t object_id, unsigned int offset, unsigned int leng
 		}
         
 #ifdef FTL_DEBUG
-        if (ret == FAILED)
+        if (ret == FAILURE)
         {
             printf("Error[FTL_WRITE] %d page write fail \n", page_id);
         }
@@ -257,7 +266,7 @@ int _FTL_OBJ_CREATE(size_t size)
     new_object = create_object(size);
     
     if (new_object == NULL) {
-        return FAILED;
+        return FAILURE;
     }
     
     // need to return the new id so the os will know how to talk to us about it
@@ -272,7 +281,7 @@ int _FTL_OBJ_DELETE(object_id_t object_id)
     
     // object not found
     if (object == NULL)
-        return FAILED;
+        return FAILURE;
 
     return remove_object(object);
 }
@@ -302,7 +311,7 @@ stored_object *create_object(size_t size)
 
     while(size > obj->size)
     {
-        if (GET_NEW_PAGE(VICTIM_OVERALL, EMPTY_TABLE_ENTRY_NB, &page_id) == FAILED)
+        if (GET_NEW_PAGE(VICTIM_OVERALL, EMPTY_TABLE_ENTRY_NB, &page_id) == FAILURE)
         {
             // cleanup just in case we managed to do anything up until now
             remove_object(obj);
@@ -337,7 +346,7 @@ int remove_object(stored_object *object)
         
 #ifdef GC_ON
         // should we really perform GC for every page? we know we are invalidating a lot of them now...
-        GC_CHECK(CALC_FLASH(current_page->page_id), CALC_BLOCK(current_page->page_id), true);
+        GC_CHECK(CALC_FLASH(current_page->page_id), CALC_BLOCK(current_page->page_id), true, true);
 #endif
 
         // get next page and free the current one
@@ -376,7 +385,7 @@ page_node *add_page(stored_object *object, uint32_t page_id)
         return NULL;
     }
 
-    object->size += VSSIM_PAGE_SIZE;
+    object->size += eVSSIM_PAGE_SIZE;
     if(object->pages == NULL)
     {
         page = allocate_new_page(object->id,page_id);
@@ -398,6 +407,76 @@ page_node *add_page(stored_object *object, uint32_t page_id)
     return curr->next;
 }
 
+ void _FTL_OBJ_WRITECREATE(object_location obj_loc, unsigned int length)
+{
+	unsigned int id = _FTL_OBJ_CREATE(length);
+
+	if (id)
+	{
+		int res = _FTL_OBJ_WRITE(id, 0, length);
+		printf("NIR-->created obj %d res: %d\n", id, res);
+	}
+
+	return;
+}
+
+ void osd_init(void) {
+	 const char *root = "/tmp/osd/";
+	 if (system("rm -rf /tmp/osd"))
+		 return;
+	 if (osd_open(root, &osd))
+		 return;
+	 osd_sense = (uint8_t*)Calloc(1, 1024);
+	 if (osd_create_partition(&osd, PARTITION_PID_LB, cdb_cont_len, osd_sense))
+		 return;
+	 printf("NIR-->Created partition successfully !\n");
+ }
+
+void OSD_WRITE_OBJ(object_location obj_loc, unsigned int length, uint8_t *buf)
+{
+	printf("WRITING OBJECT id: %" PRIu64 "of size: %d\n", obj_loc.object_id, length);
+	//char *wrbuf = (char *)Calloc(1, length);
+
+	int ret;
+
+	//need to check if the object exists first... if it does, append to it, if not create and write it in a single command
+
+	ret = osd_create(&osd, USEROBJECT_PID_LB, USEROBJECT_OID_LB + obj_loc.object_id, 1, cdb_cont_len, osd_sense);
+	if (ret) {
+		printf("ret for osd_create() is: %d\n", ret);
+
+		return;
+	}
+
+	ret = osd_append(&osd,USEROBJECT_PID_LB, USEROBJECT_OID_LB + obj_loc.object_id, length, buf, cdb_cont_len, osd_sense, DDT_CONTIG);
+
+	if (ret) {
+		printf("ret for osd_append() is: %d\n", ret);
+
+		return;
+	}
+
+
+	//int res = osd_create_and_write(&osd, USEROBJECT_PID_LB, USEROBJECT_OID_LB + obj_loc.object_id, length, 0, buf, cdb_cont_len, 0, osd_sense, DDT_CONTIG);
+	//printf("res is: %d\n", res);
+	//if (res)
+	//	return;
+	//free(wrbuf);
+	printf("OBJECT WAS WRITTEN\n");
+}
+
+void OSD_READ_OBJ(object_location obj_loc, unsigned int length, uint64_t addr)
+{
+	printf("READING OBJECT\n");
+	uint64_t len;
+	char *rdbuf = (char *)Calloc(1, length);
+	if(osd_read(&osd, USEROBJECT_PID_LB, USEROBJECT_OID_LB + obj_loc.object_id,
+	                eVSSIM_PAGE_SIZE/2, 0, NULL, (uint8_t *)rdbuf, &len, 0, osd_sense, DDT_CONTIG))
+		return;
+	free(rdbuf);
+	printf("OBJECT WAS READ\n");
+}
+
 page_node *page_by_offset(stored_object *object, unsigned int offset)
 {
     page_node *page;
@@ -407,7 +486,7 @@ page_node *page_by_offset(stored_object *object, unsigned int offset)
         return NULL;
     
     // skim through pages until offset is less than a page's size
-    for(page = object->pages; page && offset >= VSSIM_PAGE_SIZE; offset -= VSSIM_PAGE_SIZE, page = page->next)
+    for(page = object->pages; page && offset >= eVSSIM_PAGE_SIZE; offset -= eVSSIM_PAGE_SIZE, page = page->next)
         ;
     
     // if page==NULL then page collection < size - report error? or assume it's valid? - this technically shouldn't happen after the if at the beginning. just return NULL if it does

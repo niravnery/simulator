@@ -8,9 +8,9 @@
 
 extern unsigned int gc_count;
 
-void GC_CHECK(unsigned int phy_flash_nb, unsigned int phy_block_nb, bool force);
+void GC_CHECK(unsigned int phy_flash_nb, unsigned int phy_block_nb, bool force, bool isObjectStrategy);
 
-int GARBAGE_COLLECTION(int mapping_index, int l2);
+int GARBAGE_COLLECTION(int mapping_index, int l2, bool isObjectStrategy);
 int SELECT_VICTIM_BLOCK(unsigned int* phy_flash_nb, unsigned int* phy_block_nb);
 
 typedef struct write_amplification_counters
