@@ -26,6 +26,7 @@ typedef struct stored_object {
 typedef struct {
 	uint64_t partition_id;
 	uint64_t object_id;
+	bool create_object;
 } object_location;
 
 typedef struct {

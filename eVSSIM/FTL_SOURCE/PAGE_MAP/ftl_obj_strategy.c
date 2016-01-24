@@ -409,6 +409,7 @@ page_node *add_page(stored_object *object, uint32_t page_id)
 
  void _FTL_OBJ_WRITECREATE(object_location obj_loc, unsigned int length)
 {
+
 	unsigned int id = _FTL_OBJ_CREATE(length);
 
 	if (id)
@@ -434,47 +435,49 @@ page_node *add_page(stored_object *object, uint32_t page_id)
 
 void OSD_WRITE_OBJ(object_location obj_loc, unsigned int length, uint8_t *buf)
 {
-	printf("WRITING OBJECT id: %" PRIu64 "of size: %d\n", obj_loc.object_id, length);
-	//char *wrbuf = (char *)Calloc(1, length);
-
 	int ret;
 
-	//need to check if the object exists first... if it does, append to it, if not create and write it in a single command
-
-	ret = osd_create(&osd, USEROBJECT_PID_LB, USEROBJECT_OID_LB + obj_loc.object_id, 1, cdb_cont_len, osd_sense);
-	if (ret) {
-		printf("ret for osd_create() is: %d\n", ret);
-
-		return;
+	if (obj_loc.create_object)
+	{
+		printf("NIR--> CREATING AND WRITING OBJECT id: %" PRIu64 "of size: %d\n", obj_loc.object_id, length);
+		ret = osd_create_and_write(&osd, USEROBJECT_PID_LB, USEROBJECT_OID_LB + obj_loc.object_id, length, 0, buf, cdb_cont_len, 0, osd_sense, DDT_CONTIG);
+		if (ret) {
+			printf("NIR--> FAIL ! ret for osd_create_and_write() is: %d\n", ret);
+			return;
+		}
+		printf("NIR-->OBJECT WAS CREATED AND WRITTEN\n");
 	}
 
-	ret = osd_append(&osd,USEROBJECT_PID_LB, USEROBJECT_OID_LB + obj_loc.object_id, length, buf, cdb_cont_len, osd_sense, DDT_CONTIG);
+	else{
+		printf("NIR--> UPDATING OBJECT id: %" PRIu64 "of size: %d\n", obj_loc.object_id, length);
+		ret = osd_append(&osd,USEROBJECT_PID_LB, USEROBJECT_OID_LB + obj_loc.object_id, length, buf, cdb_cont_len, osd_sense, DDT_CONTIG);
+		if (ret) {
+			printf("NIR--> FAIL! ret for osd_append() is: %d\n", ret);
 
-	if (ret) {
-		printf("ret for osd_append() is: %d\n", ret);
-
-		return;
+			return;
+		}
+		printf("NIR-->OBJECT WAS UPDATED\n");
 	}
-
-
-	//int res = osd_create_and_write(&osd, USEROBJECT_PID_LB, USEROBJECT_OID_LB + obj_loc.object_id, length, 0, buf, cdb_cont_len, 0, osd_sense, DDT_CONTIG);
-	//printf("res is: %d\n", res);
-	//if (res)
-	//	return;
-	//free(wrbuf);
-	printf("OBJECT WAS WRITTEN\n");
 }
 
 void OSD_READ_OBJ(object_location obj_loc, unsigned int length, uint64_t addr)
 {
 	printf("READING OBJECT\n");
 	uint64_t len;
-	char *rdbuf = (char *)Calloc(1, length);
-	if(osd_read(&osd, USEROBJECT_PID_LB, USEROBJECT_OID_LB + obj_loc.object_id,
-	                eVSSIM_PAGE_SIZE/2, 0, NULL, (uint8_t *)rdbuf, &len, 0, osd_sense, DDT_CONTIG))
-		return;
+
+	printf("NIR-->before allocating: %d\n", length);
+	char *rdbuf = malloc(length);
+	printf("NIR-->after allocating: %d\n", length);
+
+
+	//we should also get the offset here, for cases where there's more than one prp
+
+	//if(osd_read(&osd, USEROBJECT_PID_LB, USEROBJECT_OID_LB + obj_loc.object_id, eVSSIM_PAGE_SIZE/2, 0, NULL, (uint8_t *)rdbuf, &len, 0, osd_sense, DDT_CONTIG))
+	if(osd_read(&osd, USEROBJECT_PID_LB, USEROBJECT_OID_LB + obj_loc.object_id, length, 0, NULL, (uint8_t *)rdbuf, &len, 0, osd_sense, DDT_CONTIG))
+		printf("NIR--> failed in osd_read()\n");
+	else
+		printf("NIR--> osr_read() was successful !\n");
 	free(rdbuf);
-	printf("OBJECT WAS READ\n");
 }
 
 page_node *page_by_offset(stored_object *object, unsigned int offset)

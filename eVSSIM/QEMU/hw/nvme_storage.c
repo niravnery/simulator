@@ -105,7 +105,7 @@ void nvme_dma_mem_write(target_phys_addr_t addr, uint8_t *buf, int len)
 #ifdef CONFIG_VSSIM
 //NIR --> nvme_dma_mem_read2() -> READ what's inside the prp (addr) and write it to the hw (buf) --> in this case, the prp (addr) is the dma memory we read from ?
 static void nvme_dma_mem_read2(target_phys_addr_t addr, uint8_t *buf, int len,
-        uint8_t *mapping_addr, unsigned int partition_id, unsigned int object_id)
+        uint8_t *mapping_addr, unsigned int partition_id, unsigned int object_id, bool should_create_obj)
 {
     if((len % eVSSIM_SECTOR_SIZE) != 0){
         LOG_ERR("nvme_dma_mem_read2: len (=%d) %% %d == %d (should be 0)",
@@ -124,7 +124,8 @@ static void nvme_dma_mem_read2(target_phys_addr_t addr, uint8_t *buf, int len,
     	printf("NIR-->object strategy\n");
     	object_location obj_loc = {
     			.object_id = object_id,
-				.partition_id = partition_id
+				.partition_id = partition_id,
+				.create_object = should_create_obj
     	};
 
     	//We don't need to specify the parition_id + object id
@@ -177,12 +178,18 @@ static void nvme_dma_mem_write2(target_phys_addr_t addr, uint8_t *buf, int len,
     	printf("NIR-->object strategy\n");
     	object_location obj_loc = {
     			.object_id = object_id,
-				.partition_id = partition_id
+				.partition_id = partition_id,
     	};
 
-    	//perform a simulator READ -> don't use SSD_READ as it requires us
-    	//to pass too many unused parameters
-        _FTL_OBJ_READ(obj_loc.object_id, 0, len);
+    	//perform a simulator READ
+    	//
+    	//We have a problem here as we have no idea what object id was created in the simulator object write (auto incremented) -> so this should fail as it's not the same as the
+    	//object id we're about to read from the osd later
+        int ret = _FTL_OBJ_READ(obj_loc.object_id, 0, len);
+        if (!ret)
+        	printf("NIR--> _FTL_OBJ_READ failed with ret: %d\n", ret);
+        else
+        	printf("NIR--> Successfully read object from simulator\n");
 
         //read from persistent OSD storage
     	OSD_READ_OBJ(obj_loc, len, addr);
@@ -209,6 +216,11 @@ static uint8_t do_rw_prp(NVMEState *n, uint64_t mem_addr, uint64_t *data_size_p,
     }
 
     /* Data Len to be written per page basis */
+    //
+    //the data_len is affected by the prp memory address - according to its alignment to page size
+    //this calculation of data_len appears to be simulating the mechanism in the kernel which sets up the data size for each prp prps -> it does that according to prp alignment to a page size
+    //
+    //if the calculated data_len is bigger than the provided data_size(which is a multplication of block size), then we'll use the provided data_size as the value of data_len (as there's no point in writing more data than provided)
     data_len = PAGE_SIZE - (mem_addr % PAGE_SIZE);
     printf("NIR--> data_len: %" PRIu64 " mem_addr mod PAGE_SIZE: %" PRIu64 " data_size: %" PRIu64 "\n", data_len, mem_addr % PAGE_SIZE, *data_size_p);
     if (data_len > *data_size_p) {
@@ -231,7 +243,7 @@ static uint8_t do_rw_prp(NVMEState *n, uint64_t mem_addr, uint64_t *data_size_p,
     case NVME_CMD_WRITE:
         LOG_DBG("Write cmd called");
 #ifdef CONFIG_VSSIM
-        nvme_dma_mem_read2(mem_addr, (mapping_addr + *file_offset_p), data_len, mapping_addr, obj_loc.partition_id, obj_loc.object_id);
+        nvme_dma_mem_read2(mem_addr, (mapping_addr + *file_offset_p), data_len, mapping_addr, obj_loc.partition_id, obj_loc.object_id, obj_loc.create_object);
 #else
         nvme_dma_mem_read(mem_addr, (mapping_addr + *file_offset_p), data_len);
 #endif
@@ -319,6 +331,7 @@ static uint8_t do_rw_prp_list(NVMEState *n, NVMECmd *command,
         i++;
     }
     return res;
+
 }
 
 /*********************************************************************
@@ -477,6 +490,7 @@ uint8_t nvme_io_command(NVMEState *n, NVMECmd *sqe, NVMECQE *cqe)
         	printf("NIR--> meta_buf is: %p\n", meta_buf);
     		nvme_dma_mem_read(e->mptr, meta_buf, meta_size);
         	parse_metadata(meta_buf, meta_size, &obj_loc);
+        	qemu_free(meta_buf);
     	}
 
      }
@@ -515,6 +529,8 @@ uint8_t nvme_io_command(NVMEState *n, NVMECmd *sqe, NVMECQE *cqe)
 
     /* Writing/Reading PRP1 */
     LOG_DBG("Writing/Reading PRP1");
+    //need to pass another parameter to do_rw_prp, which specifies that we're creating the object here(we'll refer to it only in case of object strategy)
+    obj_loc.create_object=true;
     res = do_rw_prp(n, e->prp1, &data_size, &file_offset, mapping_addr,
         e->opcode, obj_loc);
     if (res == FAIL) {
@@ -525,6 +541,8 @@ uint8_t nvme_io_command(NVMEState *n, NVMECmd *sqe, NVMECQE *cqe)
     //if the total data is more than 2 pages, we store the first page in prp1 and the rest of the data in a LIST of pages in prp2.
     //in any case, the file offset and mapping address is advanced as we continue writing / reading
     if (data_size > 0) {
+    	//need to pass another parameter to do_rw_prp, which specifies that we're updating (appending) the object here(we'll refer to it only in case of object strategy)
+    	obj_loc.create_object=false;
         if (data_size <= PAGE_SIZE) {
         	LOG_DBG("Writing/Reading PRP2");
             res = do_rw_prp(n, e->prp2, &data_size, &file_offset, mapping_addr,
