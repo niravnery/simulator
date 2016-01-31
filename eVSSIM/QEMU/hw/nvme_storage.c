@@ -85,7 +85,7 @@ static void parse_metadata(uint8_t *metadata_mapping_address, unsigned int metad
 				*magicSuffixPtr = '!';
 			}
 
-			printf("NIR--> partition id is: %" PRIu64 " object id is: %" PRIu64 "\n", obj_loc->partition_id, obj_loc->object_id);
+			printf("NIR--> partition id is: %lu object id is: %lu\n", obj_loc->partition_id, obj_loc->object_id);
 		}
 
 	}
@@ -103,7 +103,7 @@ void nvme_dma_mem_write(target_phys_addr_t addr, uint8_t *buf, int len)
 }
 
 #ifdef CONFIG_VSSIM
-//NIR --> nvme_dma_mem_read2() -> READ what's inside the prp (addr) and write it to the hw (buf) --> in this case, the prp (addr) is the dma memory we read from ?
+//NIR --> nvme_dma_mem_read2() -> READ what's inside the prp (addr) and write it to the hw (buf + relevant offset according to how the prps were divided) --> in this case, the prp (addr) is the dma memory we read from ?
 static void nvme_dma_mem_read2(target_phys_addr_t addr, uint8_t *buf, int len,
         uint8_t *mapping_addr, unsigned int partition_id, unsigned int object_id, bool should_create_obj)
 {
@@ -157,19 +157,22 @@ static void nvme_dma_mem_read2(target_phys_addr_t addr, uint8_t *buf, int len,
 
 }
 
-//NIR --> nvme_dma_mem_write2() -> read from the hw (buf) and WRITE to the prp (addr) --> in this case, the prp (addr) is the dma memory we write to ?
+//NIR --> nvme_dma_mem_write2() -> read from the hw (buf + relevant offset according to the current prp number we're reading ?) and WRITE to the prp (dma addr)
 static void nvme_dma_mem_write2(target_phys_addr_t addr, uint8_t *buf, int len,
         uint8_t *mapping_addr, unsigned int partition_id, unsigned int object_id)
 {
+	//the buf pointer is actually -> buf = mapping_addr + offset so:
+	uint64_t offset = buf - mapping_addr;
+
     if((len % eVSSIM_SECTOR_SIZE) != 0){
         LOG_ERR("nvme_dma_mem_write2: len (=%d) %% %d == %d (should be 0)",
                 len, eVSSIM_SECTOR_SIZE, (len % eVSSIM_SECTOR_SIZE));
     }
-    if((buf - mapping_addr) % eVSSIM_SECTOR_SIZE != 0){
-        LOG_ERR("nvme_dma_mem_write2: (buf - mapping_addr) (=%ld) %% %d == %ld "
+    if((offset) % eVSSIM_SECTOR_SIZE != 0){
+        LOG_ERR("nvme_dma_mem_write2: (offset) (=%ld) %% %d == %ld "
                 "(should be 0)",
-                buf - mapping_addr, eVSSIM_SECTOR_SIZE,
-                (buf - mapping_addr) % eVSSIM_SECTOR_SIZE);
+				offset, eVSSIM_SECTOR_SIZE,
+                (offset) % eVSSIM_SECTOR_SIZE);
     }
 
     if (partition_id != 0 && object_id != 0)
@@ -192,7 +195,7 @@ static void nvme_dma_mem_write2(target_phys_addr_t addr, uint8_t *buf, int len,
         	printf("NIR--> Successfully read object from simulator\n");
 
         //read from persistent OSD storage
-    	OSD_READ_OBJ(obj_loc, len, addr);
+    	OSD_READ_OBJ(obj_loc, len, addr, offset);
     }
     else
     {
@@ -222,7 +225,7 @@ static uint8_t do_rw_prp(NVMEState *n, uint64_t mem_addr, uint64_t *data_size_p,
     //
     //if the calculated data_len is bigger than the provided data_size(which is a multplication of block size), then we'll use the provided data_size as the value of data_len (as there's no point in writing more data than provided)
     data_len = PAGE_SIZE - (mem_addr % PAGE_SIZE);
-    printf("NIR--> data_len: %" PRIu64 " mem_addr mod PAGE_SIZE: %" PRIu64 " data_size: %" PRIu64 "\n", data_len, mem_addr % PAGE_SIZE, *data_size_p);
+    printf("NIR--> data_len: %lu mem_addr mod PAGE_SIZE: %lu data_size: %lu\n", data_len, mem_addr % PAGE_SIZE, *data_size_p);
     if (data_len > *data_size_p) {
         data_len = *data_size_p;
     }
@@ -253,45 +256,7 @@ static uint8_t do_rw_prp(NVMEState *n, uint64_t mem_addr, uint64_t *data_size_p,
         return FAIL;
     }
 
-    //Relevant for sector_strategy only for now, as it dumps the qemu "physical" storage (in memory one), and we only write there in the sector strategy,
-    //as the object strategy will be writing to persistent osd storage
-    { // DEBUG CODE DUMP
-    	unsigned int* start_p = (unsigned int*)(mapping_addr + *file_offset_p);
-    	unsigned int* end_p = (unsigned int*)(mapping_addr + *file_offset_p) + data_len / sizeof(unsigned int);
-    	printf("code dump length: %ld\n", end_p - start_p);
-    	int i =0,iall = 0;
-    	char msgBuf[512];
-    	char* msg = (char*)msgBuf;
-    	int gotSomething = 0;
-    	printf("---------------------------------------\nDUMP MEMORY START\n0x%016lX - 0x%016lX\n---------------------------------------\n",(uint64_t)start_p,(uint64_t)end_p);
-
-    	while (start_p < end_p){
-    		char* asCharArray = (char*)start_p;
-    		if (*start_p != 0){
-    			gotSomething = 1;
-    		}
-
-    		if (i == 0){
-    			msg += sprintf(msg, "#%d: 0x%016lX | ", iall, (uint64_t)start_p);
-    		}
-    		msg += sprintf(msg, "0x%X %c%c%c%c | ", *start_p, asCharArray[0], asCharArray[1], asCharArray[2], asCharArray[3]);
-    		if (i == 3) {
-    			if (gotSomething){
-    				printf("%s\n",msgBuf);
-    			}
-    			i = 0;
-    			gotSomething = 0;
-    			msg = (char*)msgBuf;
-    		}else{
-    			msg += sprintf(msg, " ");
-    			i++;
-    		}
-    		start_p++;
-    		iall++;
-
-    	}
-    	printf("---------------------------------------\nDUMP MEMORY END\n---------------------------------------\n");
-    }
+    printMemoryDump(mapping_addr + *file_offset_p,data_len);
 
     *file_offset_p = *file_offset_p + data_len;
     *data_size_p = *data_size_p - data_len;
@@ -452,8 +417,9 @@ uint8_t nvme_io_command(NVMEState *n, NVMECmd *sqe, NVMECQE *cqe)
     lba_idx = disk->idtfy_ns.flbas & 0xf;
     if ((e->mptr == 0) &&            /* if NOT supplying separate meta buffer */
     	(disk->idtfy_ns.lbafx[lba_idx].ms != 0) /* if using metadata */
-		// ((disk->idtfy_ns.flbas & 0x10) == 0) // NIR--> This AND calculation will always yield "0" as the format cannot be 16 but only 0 to 15 (is this a bug?)
-		&& ((disk->idtfy_ns.flbas & 0xf) == 0)) /* if using separate buffer */ {
+    	//NIR--> This AND calculation will always yield "0" as the format cannot be 16 but only 0 to 15 (is this a bug?) and will cause sector based access to fail
+		//&& ((disk->idtfy_ns.flbas & 0x10) == 0)) /* if using separate buffer */ {
+    	&& ((disk->idtfy_ns.flbas & 0xf) == 0)) {
         LOG_ERR("%s(): invalid meta-data for extended lba", __func__);
         sf->sc = NVME_SC_INVALID_FIELD;
         return FAIL;
@@ -476,10 +442,12 @@ uint8_t nvme_io_command(NVMEState *n, NVMECmd *sqe, NVMECQE *cqe)
 
     	ms = disk->idtfy_ns.lbafx[lba_idx].ms;
     	meta_offset = e->slba * ms;
-    	meta_size = (e->nlb + 1) * ms;
+
+    	//meta_size = (e->nlb + 1) * ms; //metadata size should be set according to the lba format and not according to the block size as it leads to sizes which are bigger than 128 and thus to memory corruption
+    	meta_size = ms;
     	meta_mapping_addr = disk->meta_mapping_addr + meta_offset;
 
-    	printf("NIR--> e->mptr (%" PRIu64 ") is: %p\n", e->mptr, (void*)e->mptr);
+    	printf("NIR--> e->mptr (%lu) is: %p\n", e->mptr, (void*)e->mptr);
 
     	//When writing, we're using the metadata's contents, which contain the partition and object ids, so we know where to write to.
     	//In order to get the metadata's contents, we first read it from the prp, straight to qemu's emulated storage (in memory) and then parse it.
@@ -499,12 +467,11 @@ uint8_t nvme_io_command(NVMEState *n, NVMECmd *sqe, NVMECQE *cqe)
     nvme_blk_sz = NVME_BLOCK_SIZE(disk->idtfy_ns.lbafx[lba_idx].lbads);
     LOG_DBG("NVME Block size: %u", nvme_blk_sz);
     data_size = (e->nlb + 1) * nvme_blk_sz;
-    printf("NIR--> e->nlb is: %" PRIu32 " data_size (%" PRIu64 ")\n", e->nlb, data_size);
-
+    printf("NIR--> e->nlb is: %" PRIu32 " data_size (%lu)\n", e->nlb, data_size);
 
     if (disk->idtfy_ns.flbas & 0x10) {
         data_size += (disk->idtfy_ns.lbafx[lba_idx].ms * (e->nlb + 1));
-        printf("NIR--> data_size (%" PRIu64 ")\n", data_size);
+        printf("NIR--> data_size (%lu)\n", data_size);
     }
 
     if (n->idtfy_ctrl->mdts && data_size > PAGE_SIZE *
@@ -529,7 +496,7 @@ uint8_t nvme_io_command(NVMEState *n, NVMECmd *sqe, NVMECQE *cqe)
 
     /* Writing/Reading PRP1 */
     LOG_DBG("Writing/Reading PRP1");
-    //need to pass another parameter to do_rw_prp, which specifies that we're creating the object here(we'll refer to it only in case of object strategy)
+    //first prp will always require creating an object
     obj_loc.create_object=true;
     res = do_rw_prp(n, e->prp1, &data_size, &file_offset, mapping_addr,
         e->opcode, obj_loc);
@@ -842,7 +809,8 @@ int nvme_create_storage_disks(NVMEState *n)
 
 #ifdef CONFIG_VSSIM
 	FTL_INIT();
-	osd_init();
+	if (!osd_init())
+		printf("NIR--> Could not init osd !\n");
 	#ifdef MONITOR_ON
 		INIT_LOG_MANAGER();
 	#endif

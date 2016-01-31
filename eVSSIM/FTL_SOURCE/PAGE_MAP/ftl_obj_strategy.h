@@ -6,6 +6,7 @@
 #include "uthash.h"
 
 typedef uint64_t object_id_t;
+typedef uint64_t partition_id_t;
 
 /* A page node in the linked list of object-mapped pages */
 typedef struct page_node {
@@ -22,6 +23,20 @@ typedef struct stored_object {
     page_node *pages;
     UT_hash_handle hh; /* makes this structure hashable */
 } stored_object;
+
+/* struct which will hold the ids of existing objects. We don't really need the value field (exists) but we add it for brevity */
+typedef struct object_map {
+    object_id_t id;
+    bool exists;
+    UT_hash_handle hh; /* makes this structure hashable */
+} object_map;
+
+/* struct which will hold the ids of existing partitions. We don't really need the value field (exists) but we add it for brevity */
+typedef struct partition_map {
+	partition_id_t id;
+    bool exists;
+    UT_hash_handle hh; /* makes this structure hashable */
+} partition_map;
 
 typedef struct {
 	uint64_t partition_id;
@@ -41,18 +56,20 @@ void TERM_OBJ_STRATEGY(void);
 int _FTL_OBJ_READ(object_id_t object_id, unsigned int offset, unsigned int length);
 int _FTL_OBJ_WRITE(object_id_t object_id, unsigned int offset, unsigned int length);
 int _FTL_OBJ_COPYBACK(int32_t source, int32_t destination);
-int _FTL_OBJ_CREATE(size_t size);
+bool _FTL_OBJ_CREATE(object_id_t obj_id, size_t size);
+void _FTL_OBJ_WRITECREATE(object_location obj_loc, size_t size);
 int _FTL_OBJ_DELETE(object_id_t object_id);
-void _FTL_OBJ_WRITECREATE(object_location obj_loc, unsigned int length);
+
 
 /* Persistent OSD storge */
-void osd_init(void);
+bool osd_init(void);
+bool create_partition(partition_id_t part_id);
 void OSD_WRITE_OBJ(object_location obj_loc, unsigned int length, uint8_t *buf);
-void OSD_READ_OBJ(object_location obj_loc, unsigned int length, uint64_t addr);
+void OSD_READ_OBJ(object_location obj_loc, unsigned int length, uint64_t addr, uint64_t offset);
 
 /* Helper functions */
 stored_object *lookup_object(object_id_t object_id);
-stored_object *create_object(size_t size);
+stored_object *create_object(object_id_t obj_id, size_t size);
 int remove_object(stored_object *object);
 
 page_node *allocate_new_page(object_id_t object_id, uint32_t page_id);
@@ -62,4 +79,9 @@ page_node *lookup_page(uint32_t page_id);
 page_node *next_page(stored_object *object,page_node *current);
 void free_obj_table(void);
 void free_page_table(void);
+void free_obj_mapping(void);
+void free_part_mapping(void);
+
+void printMemoryDump(uint8_t *buffer, unsigned int bufferLength);
+
 #endif

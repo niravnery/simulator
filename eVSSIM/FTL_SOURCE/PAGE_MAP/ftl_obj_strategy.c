@@ -4,11 +4,17 @@
 #include "osd-util/osd-util.h"
 #include "osd-util/osd-defs.h"
 
+#ifndef SECTOR_TESTS
+#include "hw.h"
+#endif
+
 uint8_t *osd_sense;
 static const uint32_t cdb_cont_len = 0;
 struct osd_device osd;
 
 stored_object *objects_table = NULL;
+object_map *objects_mapping = NULL;
+partition_map *partitions_mapping = NULL;
 page_node *global_page_table = NULL;
 object_id_t current_id;
 
@@ -17,6 +23,8 @@ void INIT_OBJ_STRATEGY(void)
 {
     current_id = 1;
     objects_table = NULL;
+    objects_mapping = NULL;
+    partitions_mapping = NULL;
     global_page_table = NULL;
 }
 
@@ -24,6 +32,24 @@ void free_obj_table(void)
 {
     stored_object *curr,*next;
     for (curr = objects_table; curr; curr=next) {
+        next=curr->hh.next;
+        free(curr);
+    }
+}
+
+void free_obj_mapping(void)
+{
+	object_map *curr,*next;
+    for (curr = objects_mapping; curr; curr=next) {
+        next=curr->hh.next;
+        free(curr);
+    }
+}
+
+void free_part_mapping(void)
+{
+	partition_map *curr,*next;
+    for (curr = partitions_mapping; curr; curr=next) {
         next=curr->hh.next;
         free(curr);
     }
@@ -41,6 +67,8 @@ void free_page_table(void)
 void TERM_OBJ_STRATEGY(void)
 {
     free_obj_table();
+    free_obj_mapping();
+    free_part_mapping();
     free_page_table();
 }
 
@@ -259,18 +287,18 @@ int _FTL_OBJ_COPYBACK(int32_t source, int32_t destination)
     return SUCCESSFUL;
 }
 
-int _FTL_OBJ_CREATE(size_t size)
+bool _FTL_OBJ_CREATE(object_id_t obj_id, size_t size)
 {
     stored_object *new_object;
     
-    new_object = create_object(size);
+    new_object = create_object(obj_id, size);
     
     if (new_object == NULL) {
-        return FAILURE;
+        return false;
     }
     
     // need to return the new id so the os will know how to talk to us about it
-    return new_object->id;
+    return true;
 }
 
 int _FTL_OBJ_DELETE(object_id_t object_id)
@@ -296,13 +324,32 @@ stored_object *lookup_object(object_id_t object_id)
     return object;
 }
 
-stored_object *create_object(size_t size)
+stored_object *create_object(object_id_t obj_id, size_t size)
 {
+
     stored_object *obj = malloc(sizeof(stored_object));
     uint32_t page_id;
 
+    object_map *obj_map;
+
+    HASH_FIND_INT(objects_mapping, &obj_id, obj_map);
+    //if the requested id was not found, let's add it
+    if (obj_map == NULL)
+    {
+    	object_map *new_obj_id = (object_map*)malloc(sizeof(object_map));
+    	new_obj_id->id = obj_id;
+    	new_obj_id->exists = true;
+    	HASH_ADD_INT(objects_mapping, id, new_obj_id);
+    }
+    else
+    {
+    	printf("NIR--> Object %lu already exists, cannot create it !\n", obj_id);
+    	return NULL;
+    }
+
+
     // initialize to stored_object struct with size and initial pages
-    obj->id = current_id++;
+    obj->id = obj_id;
     obj->size = 0;
     obj->pages = NULL;
 
@@ -407,76 +454,177 @@ page_node *add_page(stored_object *object, uint32_t page_id)
     return curr->next;
 }
 
- void _FTL_OBJ_WRITECREATE(object_location obj_loc, unsigned int length)
+ void _FTL_OBJ_WRITECREATE(object_location obj_loc, size_t size)
 {
 
-	unsigned int id = _FTL_OBJ_CREATE(length);
-
-	if (id)
+	//If that's the first prp, we need to create the object
+	if (obj_loc.create_object)
 	{
-		int res = _FTL_OBJ_WRITE(id, 0, length);
-		printf("NIR-->created obj %d res: %d\n", id, res);
+		printf("NIR-->about to create an object in the SIMULATOR -> obj id: %lu size: %lu\n", obj_loc.object_id, size);
+		bool created = _FTL_OBJ_CREATE(obj_loc.object_id, size);
+		printf("NIR-->created the SIMULATOR object !\n");
+
+		if (!created)
+		{
+			printf("NIR-->could not create the SIMULATOR object. Aborting !\n");
+			return;
+		}
 	}
+
+	printf("NIR-->about to write an object to the SIMULATOR -> obj id: %lu size: %lu\n", obj_loc.object_id, size);
+	int res = _FTL_OBJ_WRITE(obj_loc.object_id, 0, size);
+	printf("NIR-->object written to the SIMULATOR with res:%d\n", res);
 
 	return;
 }
 
- void osd_init(void) {
+ bool osd_init(void) {
 	 const char *root = "/tmp/osd/";
 	 if (system("rm -rf /tmp/osd"))
-		 return;
+		 return false;
 	 if (osd_open(root, &osd))
-		 return;
+		 return false;
+	 printf("NIR-->osd_init() finished successfully !\n");
+	 return true;
+
+ }
+
+ bool create_partition(partition_id_t part_id)
+ {
+
+	 const char *root = "/tmp/osd/";
+	 if (osd_open(root, &osd))
+		 return false;
 	 osd_sense = (uint8_t*)Calloc(1, 1024);
-	 if (osd_create_partition(&osd, PARTITION_PID_LB, cdb_cont_len, osd_sense))
-		 return;
-	 printf("NIR-->Created partition successfully !\n");
+	 if (osd_create_partition(&osd, part_id, cdb_cont_len, osd_sense))
+		 return false;
+	 printf("NIR-->created partition: %lu finished successfully !\n", part_id);
+	 return true;
  }
 
 void OSD_WRITE_OBJ(object_location obj_loc, unsigned int length, uint8_t *buf)
 {
 	int ret;
+	partition_id_t part_id = USEROBJECT_PID_LB + obj_loc.partition_id;
+	object_id_t obj_id = USEROBJECT_OID_LB + obj_loc.object_id;
 
 	if (obj_loc.create_object)
 	{
-		printf("NIR--> CREATING AND WRITING OBJECT id: %" PRIu64 "of size: %d\n", obj_loc.object_id, length);
-		ret = osd_create_and_write(&osd, USEROBJECT_PID_LB, USEROBJECT_OID_LB + obj_loc.object_id, length, 0, buf, cdb_cont_len, 0, osd_sense, DDT_CONTIG);
+	    partition_map *part_map;
+
+	    HASH_FIND_INT(partitions_mapping, &part_id, part_map);
+	    //if the requested id was not found, let's add it
+	    if (part_map == NULL)
+	    {
+	    	printf("NIR-->osd partition %lu does not exist - trying to create it!\n", part_id);
+	    	bool created = create_partition(part_id);
+	    	if (created)
+			{
+	    		partition_map *new_partition_id = (partition_map*)malloc(sizeof(partition_map));
+				new_partition_id->id = part_id;
+				new_partition_id->exists = true;
+				HASH_ADD_INT(partitions_mapping, id, new_partition_id);
+		    	printf("NIR-->osd partition %lu created successfully!\n", part_id);
+
+			}
+	    	else
+	    	{
+	    		printf("NIR-->Could not create an osd partition !\n");
+	    		return;
+	    	}
+
+	    }
+	    else
+	    {
+	    	printf("partition %lu already exists, no need to create it !\n", part_id);
+	    }
+
+		printf("NIR--> creating an writing object to OSD with partition id: %lu and object id: %lu of size: %d\n", part_id, obj_id, length);
+		ret = osd_create_and_write(&osd, part_id, obj_id, length, 0, buf, cdb_cont_len, 0, osd_sense, DDT_CONTIG);
 		if (ret) {
 			printf("NIR--> FAIL ! ret for osd_create_and_write() is: %d\n", ret);
 			return;
 		}
-		printf("NIR-->OBJECT WAS CREATED AND WRITTEN\n");
+		printf("NIR-->object was created and written to osd !\n");
 	}
 
 	else{
-		printf("NIR--> UPDATING OBJECT id: %" PRIu64 "of size: %d\n", obj_loc.object_id, length);
-		ret = osd_append(&osd,USEROBJECT_PID_LB, USEROBJECT_OID_LB + obj_loc.object_id, length, buf, cdb_cont_len, osd_sense, DDT_CONTIG);
+		printf("NIR--> updating OSD object id: %lu of size: %d\n", obj_id, length);
+		ret = osd_append(&osd,part_id, obj_id, length, buf, cdb_cont_len, osd_sense, DDT_CONTIG);
 		if (ret) {
 			printf("NIR--> FAIL! ret for osd_append() is: %d\n", ret);
 
 			return;
 		}
-		printf("NIR-->OBJECT WAS UPDATED\n");
+		printf("NIR-->OSD object was updated successfully\n");
 	}
 }
 
-void OSD_READ_OBJ(object_location obj_loc, unsigned int length, uint64_t addr)
+void printMemoryDump(uint8_t *buffer, unsigned int bufferLength)
 {
-	printf("READING OBJECT\n");
+	unsigned int* start_p = (unsigned int*)buffer;
+	unsigned int* end_p = (unsigned int*)buffer + bufferLength / sizeof(unsigned int);
+	printf("code dump length: %ld\n", end_p - start_p);
+	int i =0,iall = 0;
+	char msgBuf[512];
+	char* msg = (char*)msgBuf;
+	int gotSomething = 0;
+	printf("---------------------------------------\nDUMP MEMORY START\n0x%016lX - 0x%016lX\n---------------------------------------\n",(uint64_t)start_p,(uint64_t)end_p);
+
+	while (start_p < end_p){
+		char* asCharArray = (char*)start_p;
+		if (*start_p != 0){
+			gotSomething = 1;
+		}
+
+		if (i == 0){
+			msg += sprintf(msg, "#%d: 0x%016lX | ", iall, (uint64_t)start_p);
+		}
+		msg += sprintf(msg, "0x%X %c%c%c%c | ", *start_p, asCharArray[0], asCharArray[1], asCharArray[2], asCharArray[3]);
+		if (i == 3) {
+			if (gotSomething){
+				printf("%s\n",msgBuf);
+			}
+			i = 0;
+			gotSomething = 0;
+			msg = (char*)msgBuf;
+		}else{
+			msg += sprintf(msg, " ");
+			i++;
+		}
+		start_p++;
+		iall++;
+
+	}
+	printf("---------------------------------------\nDUMP MEMORY END\n---------------------------------------\n");
+}
+
+void OSD_READ_OBJ(object_location obj_loc, unsigned int length, uint64_t addr, uint64_t offset)
+{
+	object_id_t obj_id = USEROBJECT_OID_LB + obj_loc.object_id;
+	partition_id_t part_id = USEROBJECT_PID_LB + obj_loc.partition_id;
+
+
+	printf("NIR--> READING %d bytes from OSD OBJECT: %lu %lu\n", length, part_id, obj_id);
 	uint64_t len;
 
-	printf("NIR-->before allocating: %d\n", length);
-	char *rdbuf = malloc(length);
-	printf("NIR-->after allocating: %d\n", length);
-
+	uint8_t *rdbuf = malloc(length);
 
 	//we should also get the offset here, for cases where there's more than one prp
 
-	//if(osd_read(&osd, USEROBJECT_PID_LB, USEROBJECT_OID_LB + obj_loc.object_id, eVSSIM_PAGE_SIZE/2, 0, NULL, (uint8_t *)rdbuf, &len, 0, osd_sense, DDT_CONTIG))
-	if(osd_read(&osd, USEROBJECT_PID_LB, USEROBJECT_OID_LB + obj_loc.object_id, length, 0, NULL, (uint8_t *)rdbuf, &len, 0, osd_sense, DDT_CONTIG))
+	if(osd_read(&osd, part_id, obj_id, length, offset, NULL, rdbuf, &len, 0, osd_sense, DDT_CONTIG))
 		printf("NIR--> failed in osd_read()\n");
 	else
-		printf("NIR--> osr_read() was successful !\n");
+	{
+		printf("NIR--> osr_read() was successful. %lu bytes were read !\n", len);
+
+#ifndef SECTOR_TESTS
+		cpu_physical_memory_rw(addr, rdbuf, len, 1);
+#endif
+
+		printMemoryDump(rdbuf, length);
+
+	}
 	free(rdbuf);
 }
 
