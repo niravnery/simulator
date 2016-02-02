@@ -1619,25 +1619,20 @@ int osd_create(struct osd_device *osd, uint64_t pid, uint64_t requested_oid,
 	if (pid == 0 || pid < USEROBJECT_PID_LB)
 		goto out_illegal_req;
                 
-	osd_debug("here-1");
 	if (requested_oid != 0 && requested_oid < USEROBJECT_OID_LB)
 		goto out_illegal_req;
 
-	osd_debug("here-2");
 	/* Make sure partition is present. */
 	ret = obj_ispresent(osd->dbc, pid, PARTITION_OID, &present);
 	if (ret != OSD_OK || !present)
 		goto out_illegal_req;
-	osd_debug("here-3");
 	if (numoid > 1 && requested_oid != 0)
 		goto out_illegal_req;
-	osd_debug("here-4");
 	if (requested_oid == 0) {
 		/*
 		 * XXX: there should be a better way of getting next maximum
 		 * oid using SQL itself
 		 */
-		osd_debug("here-5");
 		if (osd->ic.cur_pid == pid) { /* cache hit */
 			oid = osd->ic.next_id;
 			osd->ic.next_id++;
@@ -1653,7 +1648,6 @@ int osd_create(struct osd_device *osd, uint64_t pid, uint64_t requested_oid,
 			osd->ic.next_id = oid + 1;
 		}
 	} else {
-		osd_debug("here-6");
 		ret = obj_ispresent(osd->dbc, pid, requested_oid, &present);
 		osd_debug("ret: %d, present: %d", ret, present);
 		if (ret != OSD_OK || present)
@@ -1671,7 +1665,6 @@ int osd_create(struct osd_device *osd, uint64_t pid, uint64_t requested_oid,
 		ret = obj_insert(osd->dbc, pid, i, USEROBJECT);
 		if (ret != 0) {
 		        osd_remove_tmp_objects(osd, pid, oid, i, sense, cdb_cont_len);
-			osd_debug("here-7");
 			goto out_hw_err;
 		}
 
@@ -1680,7 +1673,6 @@ int osd_create(struct osd_device *osd, uint64_t pid, uint64_t requested_oid,
 		if (ret != 0) {
 			obj_delete(osd->dbc, pid, i);
 			osd_remove_tmp_objects(osd, pid, oid, i, sense, cdb_cont_len);
-			osd_debug("here-8");
 			goto out_hw_err;
 		}
 
@@ -1692,7 +1684,6 @@ int osd_create(struct osd_device *osd, uint64_t pid, uint64_t requested_oid,
 			unlink(path);
 			obj_delete(osd->dbc, pid, i);
 			osd_remove_tmp_objects(osd, pid, oid, i, sense, cdb_cont_len);
-			osd_debug("here-9");
 			goto out_hw_err;
 		}
 #endif

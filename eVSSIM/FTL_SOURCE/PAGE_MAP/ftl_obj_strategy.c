@@ -149,7 +149,7 @@ int _FTL_OBJ_WRITE(object_id_t object_id, unsigned int offset, unsigned int leng
     // file not found
     if (object == NULL)
     {
-    	printf("NIR--> failed lookup\n");
+    	printf("[%s] failed lookup\n", __FUNCTION__);
         return FAILURE;
     }
     
@@ -297,7 +297,6 @@ bool _FTL_OBJ_CREATE(object_id_t obj_id, size_t size)
         return false;
     }
     
-    // need to return the new id so the os will know how to talk to us about it
     return true;
 }
 
@@ -343,7 +342,7 @@ stored_object *create_object(object_id_t obj_id, size_t size)
     }
     else
     {
-    	printf("NIR--> Object %lu already exists, cannot create it !\n", obj_id);
+    	printf("[%s] Object %lu already exists, cannot create it !\n", __FUNCTION__, obj_id);
     	return NULL;
     }
 
@@ -460,20 +459,20 @@ page_node *add_page(stored_object *object, uint32_t page_id)
 	//If that's the first prp, we need to create the object
 	if (obj_loc.create_object)
 	{
-		printf("NIR-->about to create an object in the SIMULATOR -> obj id: %lu size: %lu\n", obj_loc.object_id, size);
+		printf("[%s] about to create an object in the SIMULATOR -> obj id: %lu size: %lu\n", __FUNCTION__, obj_loc.object_id, size);
 		bool created = _FTL_OBJ_CREATE(obj_loc.object_id, size);
-		printf("NIR-->created the SIMULATOR object !\n");
+		printf("[%s] created the SIMULATOR object !\n", __FUNCTION__);
 
 		if (!created)
 		{
-			printf("NIR-->could not create the SIMULATOR object. Aborting !\n");
+			printf("[%s] could not create the SIMULATOR object. Aborting !\n", __FUNCTION__);
 			return;
 		}
 	}
 
-	printf("NIR-->about to write an object to the SIMULATOR -> obj id: %lu size: %lu\n", obj_loc.object_id, size);
+	printf("[%s] about to write an object to the SIMULATOR -> obj id: %lu size: %lu\n", __FUNCTION__, obj_loc.object_id, size);
 	int res = _FTL_OBJ_WRITE(obj_loc.object_id, 0, size);
-	printf("NIR-->object written to the SIMULATOR with res:%d\n", res);
+	printf("[%s] object written to the SIMULATOR with res:%d\n", __FUNCTION__, res);
 
 	return;
 }
@@ -484,7 +483,7 @@ page_node *add_page(stored_object *object, uint32_t page_id)
 		 return false;
 	 if (osd_open(root, &osd))
 		 return false;
-	 printf("NIR-->osd_init() finished successfully !\n");
+	 printf("[%s] osd_init() finished successfully !\n", __FUNCTION__);
 	 return true;
 
  }
@@ -498,7 +497,7 @@ page_node *add_page(stored_object *object, uint32_t page_id)
 	 osd_sense = (uint8_t*)Calloc(1, 1024);
 	 if (osd_create_partition(&osd, part_id, cdb_cont_len, osd_sense))
 		 return false;
-	 printf("NIR-->created partition: %lu finished successfully !\n", part_id);
+	 printf("[%s] created partition: %lu finished successfully !\n", __FUNCTION__, part_id);
 	 return true;
  }
 
@@ -516,7 +515,7 @@ void OSD_WRITE_OBJ(object_location obj_loc, unsigned int length, uint8_t *buf)
 	    //if the requested id was not found, let's add it
 	    if (part_map == NULL)
 	    {
-	    	printf("NIR-->osd partition %lu does not exist - trying to create it!\n", part_id);
+	    	printf("[%s] osd partition %lu does not exist - trying to create it!\n", __FUNCTION__, part_id);
 	    	bool created = create_partition(part_id);
 	    	if (created)
 			{
@@ -524,12 +523,12 @@ void OSD_WRITE_OBJ(object_location obj_loc, unsigned int length, uint8_t *buf)
 				new_partition_id->id = part_id;
 				new_partition_id->exists = true;
 				HASH_ADD_INT(partitions_mapping, id, new_partition_id);
-		    	printf("NIR-->osd partition %lu created successfully!\n", part_id);
+		    	printf("[%s] osd partition %lu created successfully!\n", __FUNCTION__, part_id);
 
 			}
 	    	else
 	    	{
-	    		printf("NIR-->Could not create an osd partition !\n");
+	    		printf("[%s] Could not create an osd partition !\n", __FUNCTION__);
 	    		return;
 	    	}
 
@@ -539,24 +538,24 @@ void OSD_WRITE_OBJ(object_location obj_loc, unsigned int length, uint8_t *buf)
 	    	printf("partition %lu already exists, no need to create it !\n", part_id);
 	    }
 
-		printf("NIR--> creating an writing object to OSD with partition id: %lu and object id: %lu of size: %d\n", part_id, obj_id, length);
+		printf("[%s] creating an writing object to OSD with partition id: %lu and object id: %lu of size: %d\n", __FUNCTION__, part_id, obj_id, length);
 		ret = osd_create_and_write(&osd, part_id, obj_id, length, 0, buf, cdb_cont_len, 0, osd_sense, DDT_CONTIG);
 		if (ret) {
-			printf("NIR--> FAIL ! ret for osd_create_and_write() is: %d\n", ret);
+			printf("[%s] FAILED ! ret for osd_create_and_write() is: %d\n", __FUNCTION__, ret);
 			return;
 		}
-		printf("NIR-->object was created and written to osd !\n");
+		printf("[%s] object was created and written to osd !\n", __FUNCTION__);
 	}
 
 	else{
-		printf("NIR--> updating OSD object id: %lu of size: %d\n", obj_id, length);
+		printf("[%s] updating OSD object id: %lu of size: %d\n", __FUNCTION__, obj_id, length);
 		ret = osd_append(&osd,part_id, obj_id, length, buf, cdb_cont_len, osd_sense, DDT_CONTIG);
 		if (ret) {
-			printf("NIR--> FAIL! ret for osd_append() is: %d\n", ret);
+			printf("[%s] FAIL! ret for osd_append() is: %d\n", __FUNCTION__, ret);
 
 			return;
 		}
-		printf("NIR-->OSD object was updated successfully\n");
+		printf("[%s] OSD object was updated successfully\n", __FUNCTION__);
 	}
 }
 
@@ -605,7 +604,7 @@ void OSD_READ_OBJ(object_location obj_loc, unsigned int length, uint64_t addr, u
 	partition_id_t part_id = USEROBJECT_PID_LB + obj_loc.partition_id;
 
 
-	printf("NIR--> READING %d bytes from OSD OBJECT: %lu %lu\n", length, part_id, obj_id);
+	printf("[%s] READING %d bytes from OSD OBJECT: %lu %lu\n", __FUNCTION__, length, part_id, obj_id);
 	uint64_t len;
 
 	uint8_t *rdbuf = malloc(length);
@@ -613,10 +612,10 @@ void OSD_READ_OBJ(object_location obj_loc, unsigned int length, uint64_t addr, u
 	//we should also get the offset here, for cases where there's more than one prp
 
 	if(osd_read(&osd, part_id, obj_id, length, offset, NULL, rdbuf, &len, 0, osd_sense, DDT_CONTIG))
-		printf("NIR--> failed in osd_read()\n");
+		printf("[%s] failed in osd_read()\n", __FUNCTION__);
 	else
 	{
-		printf("NIR--> osr_read() was successful. %lu bytes were read !\n", len);
+		printf("[%s] osd_read() was successful. %lu bytes were read !\n", __FUNCTION__, len);
 
 #ifndef SECTOR_TESTS
 		cpu_physical_memory_rw(addr, rdbuf, len, 1);
