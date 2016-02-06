@@ -69,8 +69,9 @@ void OSD_READ_OBJ(object_location obj_loc, unsigned int length, uint64_t addr, u
 
 /* Helper functions */
 stored_object *lookup_object(object_id_t object_id);
+object_map *lookup_object_mapping(object_id_t object_id);
 stored_object *create_object(object_id_t obj_id, size_t size);
-int remove_object(stored_object *object);
+int remove_object(stored_object *object, object_map *obj_map);
 
 page_node *allocate_new_page(object_id_t object_id, uint32_t page_id);
 page_node *add_page(stored_object *object, uint32_t page_id);

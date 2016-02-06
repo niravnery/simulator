@@ -303,14 +303,21 @@ bool _FTL_OBJ_CREATE(object_id_t obj_id, size_t size)
 int _FTL_OBJ_DELETE(object_id_t object_id)
 {
     stored_object *object;
+    object_map *obj_map;
     
     object = lookup_object(object_id);
     
     // object not found
     if (object == NULL)
-        return FAILURE;
+    	return FAILURE;
 
-    return remove_object(object);
+    obj_map = lookup_object_mapping(object_id);
+
+    // object_map not found
+    if (obj_map == NULL)
+    	return FAILURE;
+
+    return remove_object(object, obj_map);
 }
 
 stored_object *lookup_object(object_id_t object_id)
@@ -321,6 +328,16 @@ stored_object *lookup_object(object_id_t object_id)
     HASH_FIND_INT(objects_table, &object_id, object);
     
     return object;
+}
+
+object_map *lookup_object_mapping(object_id_t object_id)
+{
+    object_map *obj_map;
+
+    // try to find it in our hashtable. NULL will be returned if key not found
+    HASH_FIND_INT(objects_mapping, &object_id, obj_map);
+
+    return obj_map;
 }
 
 stored_object *create_object(object_id_t obj_id, size_t size)
@@ -360,7 +377,7 @@ stored_object *create_object(object_id_t obj_id, size_t size)
         if (GET_NEW_PAGE(VICTIM_OVERALL, EMPTY_TABLE_ENTRY_NB, &page_id) == FAILURE)
         {
             // cleanup just in case we managed to do anything up until now
-            remove_object(obj);
+            remove_object(obj, obj_map);
             return NULL;
         }
 
@@ -374,7 +391,7 @@ stored_object *create_object(object_id_t obj_id, size_t size)
     return obj;
 }
 
-int remove_object(stored_object *object)
+int remove_object(stored_object *object, object_map *obj_map)
 {
     page_node *current_page;
     page_node *invalidated_page;
@@ -384,6 +401,9 @@ int remove_object(stored_object *object)
     if (object->hh.tbl != NULL)
         HASH_DEL(objects_table, object);
     
+    if (obj_map->hh.tbl != NULL)
+    	HASH_DEL(objects_mapping, obj_map);
+
     current_page = object->pages;
     while (current_page != NULL)
     {

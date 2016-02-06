@@ -50,6 +50,7 @@ namespace {
                     "STORAGE_STRATEGY 2\n"; // object strategy
                 ssd_conf.close();
             	FTL_INIT();
+		INIT_OBJ_STRATEGY();
             #ifdef MONITOR_ON
             	INIT_LOG_MANAGER();
             #endif
@@ -113,8 +114,8 @@ namespace {
 #endif
         // Fill the disk with objects
         for(unsigned long p=1; p < objects_in_ssd_; p++){
-            _FTL_OBJ_CREATE(p, object_size_);
-            ASSERT_LT(0, p);
+            bool res = _FTL_OBJ_CREATE(p, object_size_);
+            ASSERT_TRUE(res);
 #ifndef NO_OSD
             ASSERT_EQ(0, osd_create_and_write(&osd, USEROBJECT_PID_LB, USEROBJECT_OID_LB + p, object_size_, 0,
                 (uint8_t *)wrbuf, cdb_cont_len, 0, osd_sense, DDT_CONTIG));
@@ -144,8 +145,8 @@ namespace {
         
         // Fill 50% of the disk with objects
         for(unsigned long p=1; p < objects_in_ssd_ / 2; p++){
-            _FTL_OBJ_CREATE(p, object_size_);
-            ASSERT_LT(0, p);
+            bool res = _FTL_OBJ_CREATE(p, object_size_);
+            ASSERT_TRUE(res);
             objects[p] = p;
 #ifndef NO_OSD
             ASSERT_EQ(0, osd_create_and_write(&osd, USEROBJECT_PID_LB, USEROBJECT_OID_LB + p, object_size_, 0,
@@ -187,8 +188,8 @@ namespace {
 #endif
         // Fill 50% of the disk with objects
         for(unsigned long p=1; p < objects_in_ssd_/2; p++){
-            _FTL_OBJ_CREATE(p, object_size_);
-            ASSERT_LT(0, p);
+            bool res = _FTL_OBJ_CREATE(p, object_size_);
+            ASSERT_TRUE(res);
             objects[p] = p;
 #ifndef NO_OSD
             // insert unique data to the object
@@ -233,11 +234,11 @@ namespace {
 #ifndef NO_OSD
         char *wrbuf = (char *)Calloc(1, object_size_);
 #endif
-        
+       
         // Fill the disk with objects
         for(unsigned long p=1; p < objects_in_ssd_; p++){
-            _FTL_OBJ_CREATE(p, object_size_);
-            ASSERT_LT(0, p);
+            bool res = _FTL_OBJ_CREATE(p, object_size_);
+            ASSERT_TRUE(res);
             objects[p] = p;
 #ifndef NO_OSD
             ASSERT_EQ(0, osd_create_and_write(&osd, USEROBJECT_PID_LB, USEROBJECT_OID_LB + p, object_size_, 0,
@@ -257,8 +258,8 @@ namespace {
 
         // And try to fill the disk again with the same number of sized objects
         for(unsigned long p=1; p < objects_in_ssd_; p++){
-            _FTL_OBJ_CREATE(p, object_size_);
-            ASSERT_LT(0, p);
+            bool res = _FTL_OBJ_CREATE(p, object_size_);
+            ASSERT_TRUE(res);
 #ifndef NO_OSD
             ASSERT_EQ(0, osd_create_and_write(&osd, USEROBJECT_PID_LB, USEROBJECT_OID_LB + p, object_size_, 0,
                 (uint8_t *)wrbuf, cdb_cont_len, 0, osd_sense, DDT_CONTIG));
@@ -280,8 +281,8 @@ namespace {
 
         int tempObj = 1000;
         // create an object_size_bytes_ - sized object
-        _FTL_OBJ_CREATE(tempObj, object_size_);
-        ASSERT_LT(0, tempObj);
+        bool res = _FTL_OBJ_CREATE(tempObj, object_size_);
+        ASSERT_TRUE(res);
 
 #ifndef NO_OSD
         char *wrbuf = (char *)Calloc(1, object_size_);
